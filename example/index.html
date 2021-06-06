@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="/static/style.css" />
         <title>TinyHTTP demo page</title>
     </head>
     <body>
@@ -8,7 +10,12 @@
         <button onclick="_refresh()">Refresh</button>
         <input type="text" id="msg" />
         <button onclick="_post()">Post message</button>
-        <table id="messages" border="1"></table>
+        
+        <div style="margin: 10px 0">
+            <a href="/messages/static">Server-side rendered version</a>
+        </div>
+
+        <div id="messages"></div>
         <script type="text/javascript" src="static/demo.js"></script>
     </body>
 </html>

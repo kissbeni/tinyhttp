@@ -7,6 +7,17 @@
 // websocket support
 #define TINYHTTP_WS
 
+// template integration
+#define TINYHTTP_TEMPLATES
+
+#ifndef MAX_HTTP_HEADERS
+#  define MAX_HTTP_HEADERS 30
+#endif
+
+#ifndef MAX_HTTP_CONTENT_SIZE
+#  define MAX_HTTP_CONTENT_SIZE (50*1024) // 50kiB
+#endif
+
 #include <cstdint>
 #include <string>
 #include <memory>
@@ -24,28 +35,81 @@
 #  include <json.h>
 #endif
 
-class MessageBuilder : public std::vector<uint8_t> {
+#ifdef TINYHTTP_TEMPLATES
+#  include <HTMLTemplate.h>
+#endif
+
+enum class HttpRequestMethod { GET,POST,PUT,DELETE,OPTIONS,UNKNOWN };
+
+struct IClientStream {
+    virtual ~IClientStream() = default;
+    virtual bool isOpen() noexcept = 0;
+    virtual void send(const void* what, size_t size) = 0;
+    virtual size_t receive(void* target, size_t max) = 0;
+    virtual std::string receiveLine(bool asciiOnly = true, size_t max = -1) = 0;
+    virtual void close() = 0;
+};
+
+class TCPClientStream : public IClientStream {
+    short mSocket;
+
     public:
-        template<typename T>
-        void write(T s) {
-            write(&s, sizeof(T));
-        }
+        ~TCPClientStream() { close(); }
+        TCPClientStream(short socket) : mSocket{socket} {}
+        TCPClientStream(const TCPClientStream&) = delete;
+        TCPClientStream(TCPClientStream&& other) : mSocket{other.mSocket} { other.mSocket = -1; }
 
-        void write(std::string s) {
-            write(s.data(), s.size());
-        }
+        static TCPClientStream acceptFrom(short listener);
 
-        void write(const char* s) {
-            write(s, strlen(s));
-        }
+        bool isOpen() noexcept override { return mSocket >= 0; }
+        void send(const void* what, size_t size) override;
+        size_t receive(void* target, size_t max) override;
+        std::string receiveLine(bool asciiOnly = true, size_t max = -1) override;
+        void close() override;
+};
 
-        void writeCRLF() { write("\r\n", 2); }
+struct StdinClientStream : IClientStream {
+    bool isOpen() noexcept override { return true; };
+    void send(const void* what, size_t size) override {
+        fwrite(what, 1, size, stdout);
+        fflush(stdout);
+    }
+    size_t receive(void* target, size_t max) override {
+        return fread(target, 1, max, stdin);
+    }
+    std::string receiveLine(bool asciiOnly = true, size_t max = -1) override {
+        std::string res;
+        std::getline(std::cin, res);
 
-        void write(const void* data, const size_t len) {
-            size_t ogsize = size();
-            resize(ogsize + len);
-            memcpy(this->data() + ogsize, data, len);
-        }
+        if (res.length() > 0 && res[res.length()-1] == '\r')
+            res = res.substr(0, res.length() - 1);
+
+        return res;
+    }
+    void close() override {}
+};
+
+struct MessageBuilder : public std::vector<uint8_t> {
+    template<typename T>
+    void write(T s) {
+        write(&s, sizeof(T));
+    }
+
+    void write(const std::string& s) {
+        write(s.data(), s.size());
+    }
+
+    void write(const char* s) {
+        write(s, strlen(s));
+    }
+
+    void writeCRLF() { write("\r\n", 2); }
+
+    void write(const void* data, const size_t len) {
+        size_t ogsize = size();
+        resize(ogsize + len);
+        memcpy(this->data() + ogsize, data, len);
+    }
 };
 
 class HttpMessageCommon {
@@ -58,8 +122,12 @@ class HttpMessageCommon {
             std::transform(i.begin(), i.end(), i.begin(), [](unsigned char c){ return std::tolower(c); });
 
             auto f = mHeaders.find(i);
-            if (f == mHeaders.end())
+            if (f == mHeaders.end()) {
+                if (mHeaders.size() >= MAX_HTTP_HEADERS)
+                    throw std::runtime_error("too many HTTP headers");
+
                 mHeaders.insert(std::pair<std::string,std::string>(i, ""));
+            }
 
             return mHeaders.find(i)->second;
         }
@@ -82,8 +150,6 @@ class HttpMessageCommon {
         const auto& content() const noexcept { return mContent; }
 };
 
-enum class HttpRequestMethod { GET,POST,PUT,DELETE,OPTIONS,UNKNOWN };
-
 class HttpRequest : public HttpMessageCommon {
     HttpRequestMethod mMethod = HttpRequestMethod::UNKNOWN;
     std::string path, query;
@@ -93,7 +159,7 @@ class HttpRequest : public HttpMessageCommon {
     #endif
 
     public:
-        bool parse(const char* raw, const ssize_t len);
+        bool parse(std::shared_ptr<IClientStream> stream);
 
         const HttpRequestMethod& getMethod() const noexcept { return mMethod; }
         const std::string& getPath() const noexcept { return path; }
@@ -104,10 +170,17 @@ class HttpRequest : public HttpMessageCommon {
         #endif
 };
 
-#ifdef TINYHTTP_WS
 struct ICanRequestProtocolHandover {
     virtual ~ICanRequestProtocolHandover() = default;
-    virtual void acceptHandover(short& serverSock, short& clientSock) = 0;
+    virtual void acceptHandover(short& serverSock, IClientStream& client) = 0;
+};
+
+#ifdef TINYHTTP_WS
+struct WebsockClientHandler {
+    virtual void onConnect() {}
+    virtual void onDisconnect() {}
+    virtual void onTextMessage(const std::string& message) {}
+    virtual void onBinaryMessage(const uint8_t* message, const size_t len) {}
 };
 #endif
 
@@ -117,7 +190,7 @@ class HttpResponse : public HttpMessageCommon {
 
     public:
         HttpResponse(const unsigned statusCode) : mStatusCode{statusCode} {
-            (*this)["Server"] = "tinyHTTP_0.1";
+            (*this)["Server"] = "tinyHTTP_1.1";
 
             if (statusCode >= 200)
                 (*this)["Content-Length"] = "0";
@@ -148,6 +221,11 @@ class HttpResponse : public HttpMessageCommon {
             : HttpResponse{statusCode, "application/json", json.serialize()} {}
         #endif
 
+        #ifdef TINYHTTP_TEMPLATES
+        HttpResponse(const unsigned statusCode, HTMLTemplate&& _template)
+            : HttpResponse{statusCode, "text/html", _template.render()} {}
+        #endif
+
         MessageBuilder buildMessage() {
             MessageBuilder b;
 
@@ -171,14 +249,6 @@ struct HandlerBuilder {
     virtual std::unique_ptr<HttpResponse> process(const HttpRequest& req) {
         return nullptr;
     }
-};
-
-class WebsockClientHandler {
-    public:
-        virtual void onConnect() {}
-        virtual void onDisconnect() {}
-        virtual void onTextMessage(const std::string& message) {}
-        virtual void onBinaryMessage(const uint8_t* message, const size_t len) {}
 };
 
 class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolHandover {
@@ -207,7 +277,7 @@ class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolH
 
         virtual std::unique_ptr<HttpResponse> process(const HttpRequest& req) override;
 
-        void acceptHandover(short& serverSock, short& clientSock) override;
+        void acceptHandover(short& serverSock, IClientStream& clientSock) override;
 };
 
 class HttpHandlerBuilder : public HandlerBuilder {
@@ -303,29 +373,30 @@ class HttpServer {
 
         return nullptr;
     }
-public:
-    HttpServer();
 
-    std::shared_ptr<WebsockHandlerBuilder> websocket(std::string path) {
-        auto h = std::make_shared<WebsockHandlerBuilder>();
-        mHandlers.insert(mHandlers.begin(), std::pair<std::string, std::shared_ptr<WebsockHandlerBuilder>>(path, h));
-        return h;
-    }
+    public:
+        HttpServer();
 
-    std::shared_ptr<HttpHandlerBuilder> when(std::string path) {
-        auto h = std::make_shared<HttpHandlerBuilder>();
-        mHandlers.push_back(std::pair<std::string, std::shared_ptr<HttpHandlerBuilder>>(path, h));
-        return h;
-    }
+        std::shared_ptr<WebsockHandlerBuilder> websocket(std::string path) {
+            auto h = std::make_shared<WebsockHandlerBuilder>();
+            mHandlers.insert(mHandlers.begin(), std::pair<std::string, std::shared_ptr<WebsockHandlerBuilder>>(path, h));
+            return h;
+        }
 
-    std::shared_ptr<HttpHandlerBuilder> whenMatching(std::string path) {
-        auto h = std::make_shared<HttpHandlerBuilder>();
-        mReHandlers.push_back(std::pair<std::regex, std::shared_ptr<HttpHandlerBuilder>>(std::regex(path), h));
-        return h;
-    }
+        std::shared_ptr<HttpHandlerBuilder> when(std::string path) {
+            auto h = std::make_shared<HttpHandlerBuilder>();
+            mHandlers.push_back(std::pair<std::string, std::shared_ptr<HttpHandlerBuilder>>(path, h));
+            return h;
+        }
 
-    void startListening(uint16_t port);
-    void shutdown();
+        std::shared_ptr<HttpHandlerBuilder> whenMatching(std::string path) {
+            auto h = std::make_shared<HttpHandlerBuilder>();
+            mReHandlers.push_back(std::pair<std::regex, std::shared_ptr<HttpHandlerBuilder>>(std::regex(path), h));
+            return h;
+        }
+
+        void startListening(uint16_t port);
+        void shutdown();
 };
 
 #endif

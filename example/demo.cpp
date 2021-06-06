@@ -1,5 +1,6 @@
 
 #include "http.hpp"
+#include <view.html.hpp>
 
 static std::vector<std::string> messages;
 
@@ -22,6 +23,11 @@ int main(int argc, char const *argv[])
             miniJson::Json::_object res;
             res["messages"] = messages;
             return HttpResponse{200, res};
+        });
+
+    s.when("/messages/static")
+        ->requested([](const HttpRequest&) -> HttpResponse {
+            return {200, templates::ViewTemplate(messages)};
         });
 
     s.startListening(8088);

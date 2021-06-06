@@ -1,2 +1,4 @@
 example/tinyhttp_demo
 example/MiniJson
+htcc/htcc
+example/templates/*.html.hpp

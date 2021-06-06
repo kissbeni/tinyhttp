@@ -5,6 +5,19 @@ if [ ! -d MiniJson ]; then
     cd MiniJson
     cmake .
     make -j
+    cd ..
 fi
 
-g++ ../http.cpp demo.cpp MiniJson/Source/libJson.a -I.. -I MiniJson/Source/include -pthread -o tinyhttp_demo
+cd ../htcc
+./build.sh
+cd ../example
+
+cd templates
+
+for x in *.html; do
+    ../../htcc/htcc $x $x.hpp
+done
+
+cd ..
+
+g++ -g -ggdb -std=c++17 ../http.cpp ../websock.cpp demo.cpp MiniJson/Source/libJson.a -Itemplates -I../htcc -I.. -I MiniJson/Source/include -pthread -o tinyhttp_demo

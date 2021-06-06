@@ -3,7 +3,7 @@ A tiny HTTP server library written in modern C++ with REST and WS support, used 
 
 ## Motivation
 
-I love to use C++ wherever I can, and I wanted to implement a HTTP serverver with using my C++11 (and above) knowledge.
+I love to use C++ wherever I can, and I wanted to implement a HTTP serverver using my C++17 knowledge.
 
 ## How to use
 

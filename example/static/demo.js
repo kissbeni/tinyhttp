@@ -8,7 +8,7 @@ function _refresh() {
             table.innerHTML = "";
 
             for (let i = 0; i < data.messages.length; i++)
-                table.innerHTML += "<tr><td>" + data.messages[i] + "</td></tr>";
+                table.innerHTML += "<div class=\"message\">" + data.messages[i] + "</div>";
         }
     };
     xhttp.open("GET", "/messages", true);
