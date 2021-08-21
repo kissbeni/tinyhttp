@@ -7,7 +7,7 @@ I love to use C++ wherever I can, and I wanted to implement a HTTP serverver usi
 
 ## How to use
 
-If you want an environment to tinker around a bit, check out the example folder :)
+If you want an environment to tinker around a bit, check out the examples folder :)
 
 ### Creating a server
 
@@ -132,18 +132,15 @@ std::string getFrame() {
 
 // Handler for protocol handover
 struct MyStreamer : public ICanRequestProtocolHandover {
-    void acceptHandover(short& serverSock, short& clientSock) {
+    void acceptHandover(short& serverSock, IClientStream& client) {
         int res;
 
         // Accept while both the client and server sockets are valid
-        while (serverSock > 0 && clientSock > 0) {
-            auto content = getFrame();
+        while (serverSock > 0 && client.isOpen()) {
+            std::string content = getFrame();
 
-            // Currently sending is done via raw unix sockets, this really needs some improvement later
-            if ((res = send(clientSock, content.data(), content.length(), MSG_NOSIGNAL)) <= 0) {
-                puts("Send failed");
-                return;
-            }
+            // Send frame
+            client.send(content.data(), content.size());
 
             usleep(40000); // push 25 Frame/s
         }
