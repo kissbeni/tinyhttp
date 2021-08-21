@@ -7,8 +7,12 @@ function _refresh() {
             let table = document.getElementById("messages");
             table.innerHTML = "";
 
-            for (let i = 0; i < data.messages.length; i++)
-                table.innerHTML += "<div class=\"message\">" + data.messages[i] + "</div>";
+            for (let i = 0; i < data.messages.length; i++) {
+                let _div = document.createElement("DIV");
+                _div.className = "message";
+                _div.innerText = data.messages[i];
+                table.appendChild(_div);
+            }
         }
     };
     xhttp.open("GET", "/messages", true);
