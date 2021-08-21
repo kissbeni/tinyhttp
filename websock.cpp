@@ -103,6 +103,7 @@ static inline void hash_sha1(const void* dataptr, const size_t size, uint8_t* ou
     SHA1_CONVERT_BLOCK(1)
     SHA1_CONVERT_BLOCK(2)
     SHA1_CONVERT_BLOCK(3)
+    SHA1_CONVERT_BLOCK(4)
 }
 
 // This was a fun afternoon... but it works nicely :)
