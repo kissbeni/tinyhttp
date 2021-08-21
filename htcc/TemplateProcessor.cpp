@@ -2,10 +2,12 @@
 #include <iomanip>
 #include <iterator>
 #include <algorithm>
+#include <regex>
 
 #include "TemplateProcessor.h"
 
-namespace {
+namespace
+{
     void trim(std::string& source)
     {
         source.erase(source.begin(), std::find_if(source.begin(), source.end(), [](char c) {
@@ -16,11 +18,13 @@ namespace {
         }).base(), source.end());
     }
 
-    bool isRef(const std::string& s) {
+    bool isRef(const std::string& s)
+    {
         return s[s.length() - 1] == '&';
     }
 
-    bool isPtr(const std::string& s) {
+    bool isPtr(const std::string& s)
+    {
         return s[s.length() - 1] == '*';
     }
 }
@@ -41,11 +45,10 @@ void TemplateProcessor::process()
             continue;
         }
 
-        beginStringIfNeeded();
         handleDefault(c);
     }
 
-    closeStringIfNeeded();
+    flushHtmlBuffer();
 
     mOutStream << "#ifndef _HTML_" << mClassName << "_HPP" << std::endl;
     mOutStream << "#define _HTML_" << mClassName << "_HPP" << std::endl << std::endl;
@@ -69,7 +72,7 @@ void TemplateProcessor::process()
         return __result.str();
     }
 )";
-    
+
     buildGetSetFunctions();
     buildMembers();
 
@@ -100,12 +103,14 @@ void TemplateProcessor::processCommand()
 
         if (modifierChar == -1)
         {
-            if (isspace(ch)) continue;
+            if (isspace(ch))
+                continue;
+
             modifierChar = ch;
 
             if (ch == '-' || ch == '=' || ch == '@')
                 continue;
-            
+
             modifierChar = 0;
         }
 
@@ -119,22 +124,28 @@ void TemplateProcessor::processCommand()
     switch (modifierChar)
     {
         case '-':
-            if (mInString)
-                mRenderCode << "\" << escapeHTML(" << _s << ") << \"";
-            else
-                mRenderCode << "        __result << escapeHTML(" << _s << ");" << std::endl;
+            if (flushHtmlBuffer(false))
+            {
+                mRenderCode << "\" << escapeHTML(" << _s << ");" << std::endl;
+                return;
+            }
+
+            mRenderCode << "        __result << escapeHTML(" << _s << ");" << std::endl;
             return;
         case '=':
-            if (mInString)
-                mRenderCode << "\" << " << _s << " << \"";
-            else
-                mRenderCode << "        __result << " << _s << ";" << std::endl;
+            if (flushHtmlBuffer(false))
+            {
+                mRenderCode << "\" << " << _s << ";" << std::endl;
+                return;
+            }
+
+            mRenderCode << "        __result << " << _s << ";" << std::endl;
             return;
         case '@':
             interpretPreprocessorCommand(_s);
             return;
         default:
-            closeStringIfNeeded();
+            flushHtmlBuffer();
             mRenderCode << "        " << _s << std::endl;
             return;
     }
@@ -148,6 +159,7 @@ void TemplateProcessor::interpretPreprocessorCommand(const std::string& s)
 
     std::istringstream iss(s);
     std::string tmp;
+
     while (getline(iss, tmp, ' '))
         parts.push_back(tmp);
 
@@ -179,20 +191,22 @@ void TemplateProcessor::interpretPreprocessorCommand(const std::string& s)
     std::cout << parts.size() << std::endl;
 }
 
-void TemplateProcessor::closeStringIfNeeded()
+bool TemplateProcessor::flushHtmlBuffer(bool closeLine)
 {
-    if (!mInString) return;
-
-    mRenderCode << "\";" << std::endl;
-    mInString = false;
-}
-
-void TemplateProcessor::beginStringIfNeeded()
-{
-    if (mInString) return;
+    if (mHtmlCode.tellp() <= 0)
+        return false;
 
     mRenderCode << "        __result << \"";
-    mInString = true;
+    mRenderCode << mHtmlCode.str();
+
+    // reset buffer
+    mHtmlCode.str("");
+    mHtmlCode.clear();
+
+    if (closeLine)
+        mRenderCode << "\";" << std::endl;
+
+    return true;
 }
 
 void TemplateProcessor::buildConstructor()
@@ -206,7 +220,7 @@ void TemplateProcessor::buildConstructor()
     for (const auto& x : mParameters)
     {
         if (!flag) mOutStream << ",";
-        else        flag = false;
+        else       flag = false;
 
         mOutStream << x.second << " _" << x.first;
     }
@@ -219,7 +233,7 @@ void TemplateProcessor::buildConstructor()
     for (const auto& x : mParameters)
     {
         if (!flag) mOutStream << ",";
-        else        flag = false;
+        else       flag = false;
 
         mOutStream << x.first << "(_" << x.first << ")";
     }
@@ -262,28 +276,29 @@ void TemplateProcessor::handleDefault(int ch)
 {
     switch (ch)
     {
-        case '\r': mRenderCode << "\\r"; break;
+        case '\r': mHtmlCode << "\\r"; break;
         case '\n':
-            mRenderCode << "\\n";
-            if (!mInlineFlag) closeStringIfNeeded();
+            mHtmlCode << "\\n";
+            if (!mInlineFlag) flushHtmlBuffer();
             mInlineFlag = true;
             break;
-        case '\f': mRenderCode << "\\f"; break;
-        case '\t': mRenderCode << "\\t"; break;
-        case '\v': mRenderCode << "\\v"; break;
-        case '\0': mRenderCode << "\\0"; break;
-        case '\"': mRenderCode << "\\\""; break;
-        case '\\': mRenderCode << "\\\\"; break;
-        case '\a': mRenderCode << "\\a"; break;
-        case '\b': mRenderCode << "\\b"; break;
-        
+        case '\f': mHtmlCode << "\\f"; break;
+        case '\t': mHtmlCode << "\\t"; break;
+        case '\v': mHtmlCode << "\\v"; break;
+        case '\0': mHtmlCode << "\\0"; break;
+        case '\"': mHtmlCode << "\\\""; break;
+        case '\\': mHtmlCode << "\\\\"; break;
+        case '\a': mHtmlCode << "\\a"; break;
+        case '\b': mHtmlCode << "\\b"; break;
+
         default:
-            if (ch > 0x7F || ch < 0x20) {
-                mRenderCode << "\\x" << std::setfill('0') << std::setw(2) << std::hex << ch;
+            if (ch > 0x7F || ch < 0x20)
+            {
+                mHtmlCode << "\\x" << std::setfill('0') << std::setw(2) << std::hex << ch;
                 break;
             }
 
-            mRenderCode << (char)ch;
+            mHtmlCode << (char)ch;
             break;
     }
 }

@@ -9,11 +9,13 @@ template<typename T>
 inline T escapeHTML(const T& what) { return what; }
 
 template<>
-inline std::string escapeHTML<std::string>(const std::string& what) {
+inline std::string escapeHTML<std::string>(const std::string& what)
+{
     std::string res;
     res.reserve(what.size());
 
     for (const auto& ch : what)
+    {
         switch(ch)
         {
             case '&':  res.append("&amp;");  break;
@@ -23,6 +25,7 @@ inline std::string escapeHTML<std::string>(const std::string& what) {
             case '>':  res.append("&gt;");   break;
             default:   res.append(&ch, 1);   break;
         }
+    }
 
     return res;
 }

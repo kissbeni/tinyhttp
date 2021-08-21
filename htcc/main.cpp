@@ -51,7 +51,8 @@ int main(int argc, char const *argv[])
         if (i == 0 && isdigit(c))
             className += '_';
         
-        if (isalpha(c) && uppercaseFlag) {
+        if (isalpha(c) && uppercaseFlag)
+        {
             uppercaseFlag = false;
             className += (char)toupper(c);
             continue;
@@ -66,7 +67,8 @@ int main(int argc, char const *argv[])
     {
         std::ofstream outfile(argv[2]);
 
-        if (!outfile.is_open()) {
+        if (!outfile.is_open())
+        {
             perror("Could not open input file");
             exit(EXIT_FAILURE);
         }
