@@ -15,6 +15,13 @@ static inline constexpr uint32_t leftRotate(const uint32_t n, const uint32_t d) 
      return (n << d) | (n >> (32-d));
 }
 
+#define SHA1_CONVERT_BLOCK(n) \
+    outBuffer[n*4+0] = (h##n >> 24) & 0xFF; \
+    outBuffer[n*4+1] = (h##n >> 16) & 0xFF; \
+    outBuffer[n*4+2] = (h##n >>  8) & 0xFF; \
+    outBuffer[n*4+3] = (h##n >>  0) & 0xFF;
+
+
 static inline void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
     const uint8_t*  ptr     = reinterpret_cast<const uint8_t*>(dataptr);
     std::vector<uint8_t> data(ptr, ptr+size);
@@ -92,30 +99,10 @@ static inline void hash_sha1(const void* dataptr, const size_t size, uint8_t* ou
         h4 += e;
     }
 
-    outBuffer[0*4+0] = (h0 >> 24) & 0xFF;
-    outBuffer[0*4+1] = (h0 >> 16) & 0xFF;
-    outBuffer[0*4+2] = (h0 >>  8) & 0xFF;
-    outBuffer[0*4+3] = (h0 >>  0) & 0xFF;
-
-    outBuffer[1*4+0] = (h1 >> 24) & 0xFF;
-    outBuffer[1*4+1] = (h1 >> 16) & 0xFF;
-    outBuffer[1*4+2] = (h1 >>  8) & 0xFF;
-    outBuffer[1*4+3] = (h1 >>  0) & 0xFF;
-
-    outBuffer[2*4+0] = (h2 >> 24) & 0xFF;
-    outBuffer[2*4+1] = (h2 >> 16) & 0xFF;
-    outBuffer[2*4+2] = (h2 >>  8) & 0xFF;
-    outBuffer[2*4+3] = (h2 >>  0) & 0xFF;
-
-    outBuffer[3*4+0] = (h3 >> 24) & 0xFF;
-    outBuffer[3*4+1] = (h3 >> 16) & 0xFF;
-    outBuffer[3*4+2] = (h3 >>  8) & 0xFF;
-    outBuffer[3*4+3] = (h3 >>  0) & 0xFF;
-
-    outBuffer[4*4+0] = (h4 >> 24) & 0xFF;
-    outBuffer[4*4+1] = (h4 >> 16) & 0xFF;
-    outBuffer[4*4+2] = (h4 >>  8) & 0xFF;
-    outBuffer[4*4+3] = (h4 >>  0) & 0xFF;
+    SHA1_CONVERT_BLOCK(0)
+    SHA1_CONVERT_BLOCK(1)
+    SHA1_CONVERT_BLOCK(2)
+    SHA1_CONVERT_BLOCK(3)
 }
 
 // This was a fun afternoon... but it works nicely :)
