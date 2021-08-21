@@ -1,0 +1,48 @@
+<%@ param std::string userDisplayName %>
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Klee+One&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="/static/style.css" />
+        <title>TinyHTTP chat - <%- userDisplayName %></title>
+    </head>
+    <body>
+        <div class="chat">
+            <div class="user">
+                <h3>You are: <%- userDisplayName %></h3>
+                <button id="logout-button">Log out</button>
+            </div>
+            <div class="messages">
+                <div class="message">
+                    <small>Alma ~ aug 20.</small>
+                    <p>Hello world!</p>
+                </div>
+                <div class="message">
+                    <small>Alma ~ 9:12</small>
+                    <p>Hello world!</p>
+                </div>
+                <div class="message">
+                    <small>Alma ~ 10:20</small>
+                    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc lobortis erat sit amet sagittis porttitor. Curabitur sed suscipit tellus. Donec consequat quis tortor et bibendum. Fusce gravida faucibus purus. Suspendisse condimentum maximus tincidunt. Fusce non eros quis turpis viverra convallis et sed lacus.</p>
+                </div>
+                <div class="message self">
+                    <small>Banán ~ 10:42</small>
+                    <p>Hello world!</p>
+                </div>
+                <div class="message self">
+                    <small>Banán ~ 11:23</small>
+                    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc lobortis erat sit amet sagittis porttitor. Curabitur sed suscipit tellus. Donec consequat quis tortor et bibendum. Fusce gravida faucibus purus. Suspendisse condimentum maximus tincidunt. Fusce non eros quis turpis viverra convallis et sed lacus.</p>
+                </div>
+            </div>
+            <div class="chat-input">
+                <input id="message-box" type="text" placeholder="Type your message here..." />
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+
+        <script type="text/javascript" src="static/demo.js"></script>
+    </body>
+</html>

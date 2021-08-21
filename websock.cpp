@@ -22,7 +22,7 @@ static inline constexpr uint32_t leftRotate(const uint32_t n, const uint32_t d) 
     outBuffer[n*4+3] = (h##n >>  0) & 0xFF;
 
 
-static inline void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
+void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
     const uint8_t*  ptr     = reinterpret_cast<const uint8_t*>(dataptr);
     std::vector<uint8_t> data(ptr, ptr+size);
 

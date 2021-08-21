@@ -1,4 +1,4 @@
-example/tinyhttp_demo
-example/MiniJson
+examples/*/*_demo
+examples/MiniJson
 htcc/htcc
-example/templates/*.html.hpp
+*.html.hpp
