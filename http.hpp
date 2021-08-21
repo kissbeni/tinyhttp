@@ -48,6 +48,14 @@ struct IClientStream {
     virtual size_t receive(void* target, size_t max) = 0;
     virtual std::string receiveLine(bool asciiOnly = true, size_t max = -1) = 0;
     virtual void close() = 0;
+
+    // wrapper for send for any object having a data() -> uint8_t* and a size() -> integer function
+    template<
+        typename T,
+        typename Chk1 = typename std::enable_if<std::is_same<decltype(T().data()), uint8_t*>::value>::type,
+        typename Chk2 = typename std::enable_if<std::is_integral<decltype(T().size())>::value>::type
+    >
+    void send(const T& data) { send(data.data(), data.size()); }
 };
 
 class TCPClientStream : public IClientStream {

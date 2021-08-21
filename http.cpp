@@ -228,12 +228,12 @@ void HttpServer::startListening(uint16_t port) {
 
                     try {
                         if (!req.parse(stream)) {
-                            stream->send(mDefault400Message.data(), mDefault400Message.size());
+                            stream->send(mDefault400Message);
                             stream->close();
                             continue;
                         }
                     } catch (...) {
-                        stream->send(mDefault400Message.data(), mDefault400Message.size());
+                        stream->send(mDefault400Message);
                         stream->close();
                         continue;
                     }
@@ -241,7 +241,7 @@ void HttpServer::startListening(uint16_t port) {
                     auto res = processRequest(req.getPath(), req);
                     if (res) {
                         auto builtMessage = res->buildMessage();
-                        stream->send(builtMessage.data(), builtMessage.size());
+                        stream->send(builtMessage);
 
                         if (res->acceptProtocolHandover(&handover))
                             break;
@@ -249,7 +249,7 @@ void HttpServer::startListening(uint16_t port) {
                         goto keep_alive_check;
                     }
 
-                    stream->send(mDefault404Message.data(), mDefault404Message.size());
+                    stream->send(mDefault404Message);
 
                     keep_alive_check:
                     if (req["Connection"] != "keep-alive")
