@@ -19,13 +19,14 @@ struct TemplateProcessor {
         void processCommand();
         void interpretPreprocessorCommand(const std::string& s);
 
-        bool flushHtmlBuffer(bool closeLine = true);
+        bool flushHtmlBuffer();
+        void closeOutputLine();
 
         void buildConstructor();
         void buildGetSetFunctions();
         void buildMembers();
 
-        bool mInlineFlag;
+        bool mInlineFlag, mCountinousOutputFlag;
 
         std::istream& mInStream;
         std::ostream& mOutStream;

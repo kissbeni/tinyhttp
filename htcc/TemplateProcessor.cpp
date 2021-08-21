@@ -34,6 +34,8 @@ void TemplateProcessor::process()
     mHeaderIncludes.insert("<HTMLTemplate.h>");
 
     mInlineFlag = true;
+    mCountinousOutputFlag = false;
+
     while (!atEnd())
     {
         int c = mInStream.get();
@@ -49,6 +51,7 @@ void TemplateProcessor::process()
     }
 
     flushHtmlBuffer();
+    closeOutputLine();
 
     mOutStream << "#ifndef _HTML_" << mClassName << "_HPP" << std::endl;
     mOutStream << "#define _HTML_" << mClassName << "_HPP" << std::endl << std::endl;
@@ -124,18 +127,18 @@ void TemplateProcessor::processCommand()
     switch (modifierChar)
     {
         case '-':
-            if (flushHtmlBuffer(false))
+            if (flushHtmlBuffer())
             {
-                mRenderCode << "\" << escapeHTML(" << _s << ");" << std::endl;
+                mRenderCode << " << escapeHTML(" << _s << ")";
                 return;
             }
 
             mRenderCode << "        __result << escapeHTML(" << _s << ");" << std::endl;
             return;
         case '=':
-            if (flushHtmlBuffer(false))
+            if (flushHtmlBuffer())
             {
-                mRenderCode << "\" << " << _s << ";" << std::endl;
+                mRenderCode << " << " << _s;
                 return;
             }
 
@@ -146,6 +149,7 @@ void TemplateProcessor::processCommand()
             return;
         default:
             flushHtmlBuffer();
+            closeOutputLine();
             mRenderCode << "        " << _s << std::endl;
             return;
     }
@@ -191,22 +195,31 @@ void TemplateProcessor::interpretPreprocessorCommand(const std::string& s)
     std::cout << parts.size() << std::endl;
 }
 
-bool TemplateProcessor::flushHtmlBuffer(bool closeLine)
+bool TemplateProcessor::flushHtmlBuffer()
 {
     if (mHtmlCode.tellp() <= 0)
         return false;
 
-    mRenderCode << "        __result << \"";
-    mRenderCode << mHtmlCode.str();
+    if (!mCountinousOutputFlag)
+        mRenderCode << "        __result";
+    
+    mCountinousOutputFlag = true;
+
+    mRenderCode << " << \"" << mHtmlCode.str() << "\"";
 
     // reset buffer
     mHtmlCode.str("");
     mHtmlCode.clear();
 
-    if (closeLine)
-        mRenderCode << "\";" << std::endl;
-
     return true;
+}
+
+void TemplateProcessor::closeOutputLine()
+{
+    if (mCountinousOutputFlag)
+        mRenderCode << ";" << std::endl;
+
+    mCountinousOutputFlag = false;
 }
 
 void TemplateProcessor::buildConstructor()
@@ -279,7 +292,13 @@ void TemplateProcessor::handleDefault(int ch)
         case '\r': mHtmlCode << "\\r"; break;
         case '\n':
             mHtmlCode << "\\n";
-            if (!mInlineFlag) flushHtmlBuffer();
+
+            if (!mInlineFlag)
+            {
+                flushHtmlBuffer();
+                closeOutputLine();
+            }
+
             mInlineFlag = true;
             break;
         case '\f': mHtmlCode << "\\f"; break;
