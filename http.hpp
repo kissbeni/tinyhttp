@@ -18,6 +18,14 @@
 #  define MAX_HTTP_CONTENT_SIZE (50*1024) // 50kiB
 #endif
 
+#ifndef MAX_ALLOWED_WS_FRAME_LENGTH
+#  define MAX_ALLOWED_WS_FRAME_LENGTH (50*1024) // 50kiB
+#endif
+
+#ifndef WS_FRAGMENT_THRESHOLD
+#  define WS_FRAGMENT_THRESHOLD (2*1024) // 2kiB
+#endif
+
 #include <cstdint>
 #include <string>
 #include <memory>
@@ -40,6 +48,27 @@
 #endif
 
 enum class HttpRequestMethod { GET,POST,PUT,DELETE,OPTIONS,UNKNOWN };
+
+#ifdef TINYHTTP_WS
+enum {
+    WSOPC_CONTINUATION  = 0x0,
+    WSOPC_TEXT          = 0x1,
+    WSOPC_BINARY        = 0x2,
+    WSOPC_NONCTRL_RES0  = 0x3,
+    WSOPC_NONCTRL_RES1  = 0x4,
+    WSOPC_NONCTRL_RES2  = 0x5,
+    WSOPC_NONCTRL_RES3  = 0x6,
+    WSOPC_NONCTRL_RES4  = 0x7,
+    WSOPC_DISCONNECT    = 0x8,
+    WSOPC_PING          = 0x9,
+    WSOPC_PONG          = 0xA,
+    WSOPC_CTRL_RES0     = 0xB,
+    WSOPC_CTRL_RES1     = 0xC,
+    WSOPC_CTRL_RES2     = 0xD,
+    WSOPC_CTRL_RES3     = 0xE,
+    WSOPC_CTRL_RES4     = 0xF,
+};
+#endif
 
 struct IClientStream {
     virtual ~IClientStream() = default;
@@ -189,6 +218,13 @@ struct WebsockClientHandler {
     virtual void onDisconnect() {}
     virtual void onTextMessage(const std::string& message) {}
     virtual void onBinaryMessage(const uint8_t* message, const size_t len) {}
+
+    void sendRaw(uint8_t opcode, const void* data, size_t length, bool mask = true);
+    void sendDisconnect();
+    void attachTcpStream(IClientStream* s) { mClient = s; }
+
+    protected:
+        IClientStream* mClient;
 };
 #endif
 

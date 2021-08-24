@@ -232,6 +232,7 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
     int len;
 
     auto theClient = mFactory->makeInstance();
+    theClient->attachTcpStream(&client);
     theClient->onConnect();
 
     try {
@@ -252,10 +253,17 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
                 break;
 
             size_t payloadLength = second & 0x7F;
-            if (payloadLength > 125) {
-                // TODO:
-                fprintf(stderr, "I was too lazy, sorry\n");
-                break;
+            if (payloadLength == 126) {
+                client.receive(buffer, 2);
+                payloadLength = ntohs(*reinterpret_cast<uint16_t*>(buffer));
+            } else if (payloadLength == 127) {
+                client.receive(&payloadLength, 8);
+                payloadLength = be64toh(payloadLength);
+
+                if (payloadLength & (1ull<<63)) {
+                    theClient->sendDisconnect();
+                    break;
+                }
             }
 
             uint32_t key;
@@ -283,4 +291,73 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
     }
 
     theClient->onDisconnect();
+}
+
+void WebsockClientHandler::sendRaw(uint8_t opcode, const void* data, size_t length, bool mask) {
+    size_t bufferPosition = 0, headerPosition;
+
+    size_t allocLen = 2 + WS_FRAGMENT_THRESHOLD;
+
+    if (WS_FRAGMENT_THRESHOLD > UINT16_MAX)
+        allocLen += 8;
+    else if (WS_FRAGMENT_THRESHOLD > 126)
+        allocLen += 2;
+
+    uint8_t* packetBuffer = new uint8_t[allocLen];
+
+    if (!data)
+        length = 0;
+    
+    const uint8_t* data_u8 = reinterpret_cast<const uint8_t*>(data);
+    uint32_t key = static_cast<uint32_t>(rand());
+
+    do {
+        headerPosition = 2;
+        packetBuffer[0] = opcode & 0xF;
+        packetBuffer[1] = 0;
+
+        opcode = WSOPC_CONTINUATION;
+
+        if ((length - bufferPosition) <= WS_FRAGMENT_THRESHOLD)
+            packetBuffer[0] |= 0x80; // fin
+
+        if (mask)
+            packetBuffer[1] |= 0x80;
+
+        size_t lengthToSend = std::min<size_t>(WS_FRAGMENT_THRESHOLD, (length - bufferPosition));
+
+        if (lengthToSend < 126) {
+            packetBuffer[1] |= static_cast<uint8_t>(lengthToSend);
+        } else if (lengthToSend <= UINT16_MAX) {
+            packetBuffer[1] |= 126;
+            *reinterpret_cast<uint16_t*>(&packetBuffer[headerPosition]) = htobe16(static_cast<uint16_t>(lengthToSend));
+            headerPosition += 2;
+        } else {
+            packetBuffer[1] |= 127;
+            *reinterpret_cast<uint64_t*>(&packetBuffer[headerPosition]) = htobe64(static_cast<uint64_t>(lengthToSend));
+            headerPosition += 8;
+        }
+
+        if (mask) {
+            *reinterpret_cast<uint32_t*>(&packetBuffer[headerPosition]) = htobe32(static_cast<uint32_t>(key));
+            headerPosition += 4;
+
+            for (size_t i = 0, o = 0; i < lengthToSend; i++, o = i % 4) {
+                uint8_t shift = (3 - o) << 3;
+                packetBuffer[i + headerPosition] = data_u8[i + bufferPosition] ^ ((shift == 0 ? key : (key >> shift)) & 0xFF);
+            }
+        } else {
+            memcpy(packetBuffer + headerPosition, data_u8 + bufferPosition, lengthToSend);
+        }
+        
+        mClient->send(packetBuffer, lengthToSend + headerPosition);
+
+        bufferPosition += lengthToSend;
+    } while (bufferPosition < length);
+
+    delete[] packetBuffer;
+}
+
+void WebsockClientHandler::sendDisconnect() {
+    sendRaw(WSOPC_DISCONNECT, nullptr, 0);
 }

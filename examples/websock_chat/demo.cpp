@@ -79,6 +79,7 @@ struct ChatSocketHandler : public WebsockClientHandler {
     void onTextMessage(const std::string& message) override {
         puts("Text message!");
         std::cout << "  -> " << message << std::endl;
+        sendRaw(WSOPC_TEXT, "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut at euismod arcu. Cras dictum venenatis urna ac ultrices. Donec nunc metus, elementum sed nulla id, varius pulvinar nisi. Curabitur faucibus risus ut tempor facilisis. In sit amet ex vel metus est.", 256);
     }
 
     void onBinaryMessage(const uint8_t* message, const size_t len) override {
