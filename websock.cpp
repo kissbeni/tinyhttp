@@ -228,8 +228,9 @@ std::unique_ptr<HttpResponse> WebsockHandlerBuilder::process(const HttpRequest& 
 }
 
 void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& client) {
-    char buffer[512];
-    int len;
+    uint8_t buffer[64], realOpc;
+    std::vector<uint8_t> contentBuffer;
+    bool fin, receivingFragment;
 
     auto theClient = mFactory->makeInstance();
     theClient->attachTcpStream(&client);
@@ -237,54 +238,95 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 
     try {
         while (serverSock > 0 && client.isOpen()) {
-            client.receive(buffer, 2);
+            receivingFragment = false;
+            contentBuffer.clear();
 
-            if (len == 0)
-                break;
+            size_t totalLength = 0;
 
-            uint8_t first  = buffer[0];
-            uint8_t second = buffer[1];
+            do {
+                if (client.receive(buffer, 2) == 0)
+                    break;
 
-            bool fin = !!(first & 0x80);
-            bool msk = !!(second & 0x80);
-            uint8_t opc = first & 0x0F;
+                uint8_t first  = buffer[0];
+                uint8_t second = buffer[1];
 
-            if (opc == 0x08 /* connection close */)
-                break;
+                fin = !!(first & 0x80);
+                bool msk = !!(second & 0x80);
 
-            size_t payloadLength = second & 0x7F;
-            if (payloadLength == 126) {
-                client.receive(buffer, 2);
-                payloadLength = ntohs(*reinterpret_cast<uint16_t*>(buffer));
-            } else if (payloadLength == 127) {
-                client.receive(&payloadLength, 8);
-                payloadLength = be64toh(payloadLength);
-
-                if (payloadLength & (1ull<<63)) {
+                if (first & 0x70) {
                     theClient->sendDisconnect();
                     break;
                 }
-            }
 
-            uint32_t key;
-            if (msk) {
-                client.receive(&key, 4);
-                key = ntohl(key);
-            }
+                uint8_t opc = first & 0x0F;
 
-            client.receive(buffer, payloadLength);
+                if (!receivingFragment)
+                    realOpc = opc;
 
-            if (msk) {
-                for (size_t i = 0, o = 0; i < payloadLength; i++, o = i % 4) {
-                    uint8_t shift = (3 - o) << 3;
-                    buffer[i] ^= (shift == 0 ? key : (key >> shift)) & 0xFF;
+                if (receivingFragment && opc != WSOPC_CONTINUATION) {
+                    theClient->sendDisconnect();
+                    break;
                 }
-            }
 
-            if (opc == 1)
-                theClient->onTextMessage(std::string(reinterpret_cast<char*>(buffer), payloadLength));
-            else if (opc == 2)
-                theClient->onBinaryMessage(reinterpret_cast<uint8_t*>(buffer), payloadLength);
+                if (opc == WSOPC_DISCONNECT)
+                    break;
+
+                size_t payloadLength = second & 0x7F;
+                if (payloadLength == 126) {
+                    client.receive(buffer, 2);
+                    payloadLength = ntohs(*reinterpret_cast<uint16_t*>(buffer));
+                } else if (payloadLength == 127) {
+                    client.receive(&payloadLength, 8);
+                    payloadLength = be64toh(payloadLength);
+
+                    if (payloadLength & (1ull<<63)) {
+                        theClient->sendDisconnect();
+                        break;
+                    }
+                }
+
+                uint32_t key;
+                if (msk) {
+                    client.receive(&key, 4);
+                    key = ntohl(key);
+                }
+
+                size_t rl = 0;
+
+                if (totalLength + payloadLength > MAX_ALLOWED_WS_FRAME_LENGTH) {
+                    theClient->sendDisconnect();
+                    break;
+                }
+
+                contentBuffer.resize(totalLength + payloadLength);
+
+                while (rl < payloadLength)
+                    rl += client.receive(contentBuffer.data() + totalLength + rl, std::min<size_t>(32768, payloadLength - rl));
+
+                if (msk) {
+                    for (size_t i = 0, o = 0; i < payloadLength; i++, o = i % 4) {
+                        uint8_t shift = (3 - o) << 3;
+                        contentBuffer[i + totalLength] ^= (shift == 0 ? key : (key >> shift)) & 0xFF;
+                    }
+                }
+
+                totalLength += payloadLength;
+                receivingFragment = true;
+            } while (!fin);
+
+            switch (realOpc) {
+                case WSOPC_TEXT:
+                    theClient->onTextMessage(std::string(reinterpret_cast<char*>(contentBuffer.data()), contentBuffer.size()));
+                    break;
+                case WSOPC_BINARY:
+                    theClient->onBinaryMessage(contentBuffer.data(), contentBuffer.size());
+                    break;
+                case WSOPC_PING:
+                    theClient->sendRaw(WSOPC_PONG, contentBuffer.data(), contentBuffer.size());
+                    break;
+                default:
+                    break;
+            }
         }
     } catch (std::exception& e) {
         std::cerr << "WebSocket closed due to an exception (" << e.what() << ")\n";
@@ -296,7 +338,10 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 void WebsockClientHandler::sendRaw(uint8_t opcode, const void* data, size_t length, bool mask) {
     size_t bufferPosition = 0, headerPosition;
 
-    size_t allocLen = 2 + WS_FRAGMENT_THRESHOLD;
+    size_t allocLen = 2 + std::min<size_t>(length, WS_FRAGMENT_THRESHOLD);
+
+    if (mask)
+        allocLen += 4;
 
     if (WS_FRAGMENT_THRESHOLD > UINT16_MAX)
         allocLen += 8;
@@ -360,4 +405,12 @@ void WebsockClientHandler::sendRaw(uint8_t opcode, const void* data, size_t leng
 
 void WebsockClientHandler::sendDisconnect() {
     sendRaw(WSOPC_DISCONNECT, nullptr, 0);
+}
+
+void WebsockClientHandler::sendText(const std::string& str) {
+    sendRaw(WSOPC_TEXT, str.data(), str.size());
+}
+
+void WebsockClientHandler::sendBinary(const void* data, size_t length) {
+    sendRaw(WSOPC_BINARY, data, length);
 }

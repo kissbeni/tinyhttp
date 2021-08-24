@@ -221,6 +221,30 @@ struct WebsockClientHandler {
 
     void sendRaw(uint8_t opcode, const void* data, size_t length, bool mask = true);
     void sendDisconnect();
+    void sendText(const std::string& str);
+    void sendBinary(const void* data, size_t length);
+    
+    template<size_t N>
+    void sendBinary(const uint8_t data[N]) {
+        sendBinary(data, N);
+    }
+
+    // wrapper for send for any object having a data() -> uint8_t* and a size() -> integer function
+    template<
+        typename T,
+        typename Chk1 = typename std::enable_if<std::is_same<decltype(T().data()), uint8_t*>::value>::type,
+        typename Chk2 = typename std::enable_if<std::is_integral<decltype(T().size())>::value>::type
+    >
+    void sendBinary(const T& data) { sendBinary(data.data(), data.size()); }
+
+    #ifdef TINYHTTP_JSON
+
+    void sendJson(const miniJson::Json& json) {
+        sendText(json.serialize());
+    }
+
+    #endif
+
     void attachTcpStream(IClientStream* s) { mClient = s; }
 
     protected:
