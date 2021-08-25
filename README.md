@@ -132,7 +132,7 @@ std::string getFrame() {
 
 // Handler for protocol handover
 struct MyStreamer : public ICanRequestProtocolHandover {
-    void acceptHandover(short& serverSock, IClientStream& client) {
+    void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
         int res;
 
         // Accept while both the client and server sockets are valid

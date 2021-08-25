@@ -209,7 +209,7 @@ class HttpRequest : public HttpMessageCommon {
 
 struct ICanRequestProtocolHandover {
     virtual ~ICanRequestProtocolHandover() = default;
-    virtual void acceptHandover(short& serverSock, IClientStream& client) = 0;
+    virtual void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) = 0;
 };
 
 #ifdef TINYHTTP_WS
@@ -246,9 +246,11 @@ struct WebsockClientHandler {
     #endif
 
     void attachTcpStream(IClientStream* s) { mClient = s; }
+    void attachRequest(std::unique_ptr<HttpRequest> req) { mRequest.swap(req); }
 
     protected:
         IClientStream* mClient;
+        std::unique_ptr<HttpRequest> mRequest;
 };
 #endif
 
@@ -345,7 +347,7 @@ class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolH
 
         virtual std::unique_ptr<HttpResponse> process(const HttpRequest& req) override;
 
-        void acceptHandover(short& serverSock, IClientStream& clientSock) override;
+        void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) override;
 };
 
 class HttpHandlerBuilder : public HandlerBuilder {

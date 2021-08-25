@@ -227,13 +227,14 @@ std::unique_ptr<HttpResponse> WebsockHandlerBuilder::process(const HttpRequest& 
     return HandlerBuilder::process(req);
 }
 
-void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& client) {
+void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
     uint8_t buffer[64], realOpc;
     std::vector<uint8_t> contentBuffer;
     bool fin, receivingFragment;
 
     auto theClient = mFactory->makeInstance();
     theClient->attachTcpStream(&client);
+    theClient->attachRequest(std::move(srcRequest));
     theClient->onConnect();
 
     try {

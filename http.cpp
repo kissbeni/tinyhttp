@@ -200,8 +200,8 @@ void HttpServer::startListening(uint16_t port) {
         iRetval = bind(mSocket, reinterpret_cast<struct sockaddr*>(&remote), sizeof(remote));
 
         if (iRetval < 0) {
-            usleep(100000);
-            //throw std::runtime_error("Failed to bind socket");
+            perror("Failed to bind socket, retrying in 5 seconds...");
+            usleep(1000 * 5000);
         } else break;
     }
 
@@ -219,8 +219,9 @@ void HttpServer::startListening(uint16_t port) {
         #endif
 
         std::thread th([stream,this]() {
-            ssize_t len;
             ICanRequestProtocolHandover* handover = nullptr;
+
+            std::unique_ptr<HttpRequest> handoverRequest;
 
             try {
                 while (stream->isOpen()) {
@@ -243,8 +244,10 @@ void HttpServer::startListening(uint16_t port) {
                         auto builtMessage = res->buildMessage();
                         stream->send(builtMessage);
 
-                        if (res->acceptProtocolHandover(&handover))
+                        if (res->acceptProtocolHandover(&handover)) {
+                            handoverRequest = std::make_unique<HttpRequest>(req);
                             break;
+                        }
 
                         goto keep_alive_check;
                     }
@@ -256,7 +259,7 @@ void HttpServer::startListening(uint16_t port) {
                         break;
                 }
 
-                if (handover) handover->acceptHandover(mSocket, *stream.get());
+                if (handover) handover->acceptHandover(mSocket, *stream.get(), std::move(handoverRequest));
             } catch (std::exception& e) {
                 std::cerr << "Exception in HTTP client handler (" << e.what() << ")\n";
             }
