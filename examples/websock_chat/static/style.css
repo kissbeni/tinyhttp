@@ -57,7 +57,7 @@ body {
   flex: 1;
 }
 
-.messages {
+#messages {
     display: flex;
     flex-direction: column;
     padding: .5em;
@@ -69,7 +69,7 @@ body {
     transition: scrollbar-color .2s ease-in-out;
 }
 
-.chat:hover .messages {
+.chat:hover #messages {
     scrollbar-color: #666 transparent;
 }
 

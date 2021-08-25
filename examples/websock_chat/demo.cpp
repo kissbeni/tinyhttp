@@ -71,15 +71,103 @@ std::string createSession(size_t userId) {
     return token;
 }
 
+std::string parseSessionCookie(std::string cookieString) {
+    ssize_t pos = cookieString.find("tinyhttpChatSess=");
+
+    if (pos < 0)
+        return {};
+    
+    std::string croppedCookie = cookieString.substr(pos);
+
+    if (croppedCookie.length() <= strlen("tinyhttpChatSess="))
+        return {};
+
+    croppedCookie = croppedCookie.substr(croppedCookie.find('=') + 1);
+    croppedCookie = croppedCookie.substr(0, croppedCookie.find(';'));
+    return croppedCookie;
+}
+
+struct ChatSocketHandler;
+
+std::set<ChatSocketHandler*> gChatClients;
+
 struct ChatSocketHandler : public WebsockClientHandler {
     void onConnect() override {
         puts("Connect!");
+
+        mSessionToken = parseSessionCookie((*mRequest)["Cookie"]);
+        
+        if (checkSession()) {
+            mUser = &gUsers[gUserSessions[mSessionToken]];
+            gChatClients.insert(this);
+        }
     }
 
     void onTextMessage(const std::string& message) override {
-        puts("Text message!");
-        std::cout << "  -> " << message << std::endl;
-        sendJson(miniJson::Json::_object { { "Hello", "World" } });
+        if (!checkSession()) return;
+
+        std::time_t now = std::time(0);
+
+        std::string e;
+        auto j = miniJson::Json::parse(message, e);
+
+        if (!e.empty()) {
+            sendJson(miniJson::Json::_object {
+                { "type", "error" },
+                { "error", e },
+                { "time", (double) now }
+            });
+
+            return;
+        }
+
+        if (!j["message"].isString()) {
+            sendJson(miniJson::Json::_object {
+                { "type", "error" },
+                { "error", "invalid message" },
+                { "time", (double) now }
+            });
+
+            return;
+        }
+
+        std::string _message = j["message"].toString();
+
+        if (_message.empty()) {
+            sendJson(miniJson::Json::_object {
+                { "type", "error" },
+                { "error", "empty message" },
+                { "time", (double) now }
+            });
+
+            return;
+        }
+
+        std::cout << " [" << mUser->displayName << "] -> " << _message << std::endl;
+
+        sendJson(miniJson::Json::_object {
+            { "type", "text_message" },
+            { "sender", miniJson::Json::_object {
+                { "id", "$self" },
+                { "name", mUser->displayName }
+            } },
+            { "content", _message },
+            { "time", (double) now }
+        });
+
+        auto toSend = miniJson::Json::_object {
+            { "type", "text_message" },
+            { "sender", miniJson::Json::_object {
+                { "id", (double) mUser->id },
+                { "name", mUser->displayName }
+            } },
+            { "content", _message },
+            { "time", (double) now }
+        };
+
+        for (auto client : gChatClients)
+            if (client != this)
+                client->sendJson(toSend);
     }
 
     void onBinaryMessage(const uint8_t* message, const size_t len) override {
@@ -88,7 +176,23 @@ struct ChatSocketHandler : public WebsockClientHandler {
 
     void onDisconnect() override {
         puts("Disconnect!");
+        gChatClients.erase(this);
     }
+
+    private:
+        std::string mSessionToken;
+        User* mUser;
+
+        bool checkSession() {
+            auto sess = gUserSessions.find(mSessionToken);
+
+            if (sess == gUserSessions.end()) {
+                sendDisconnect();
+                return false;
+            }
+
+            return true;
+        }
 };
 
 static HttpResponse handleRegister(const HttpRequest& req) {
@@ -195,25 +299,13 @@ static HttpResponse handleLogin(const HttpRequest& req) {
     return response;
 }
 
-std::string parseSessionCookie(std::string cookieString) {
-    ssize_t pos = cookieString.find("tinyhttpChatSess=");
-
-    if (pos < 0)
-        return {};
-    
-    std::string croppedCookie = cookieString.substr(pos);
-
-    if (croppedCookie.length() <= strlen("tinyhttpChatSess="))
-        return {};
-
-    croppedCookie = croppedCookie.substr(croppedCookie.find('=') + 1);
-    croppedCookie = croppedCookie.substr(0, croppedCookie.find(';'));
-    return croppedCookie;
-}
-
 int main(int argc, char const *argv[])
 {
     srand(time(NULL));
+
+    // Add some users
+    addUser("test1", "password", "Test1");
+    addUser("test2", "password", "Test2");
 
     HttpServer s;
 

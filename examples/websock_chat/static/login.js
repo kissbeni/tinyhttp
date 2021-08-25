@@ -22,7 +22,7 @@
         setFormError(undefined);
     }
 
-    let currentTab = 'register';
+    let currentTab = 'login';
     function switchTab(name) {
         if (name === currentTab)
             return;
