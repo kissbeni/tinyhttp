@@ -49,7 +49,7 @@ static HttpResponse handleRegister(const HttpRequest& req) {
     }
 
     // possible race condition here, you may be able to create two users with the same username
-    if (gUserSessions.find(username) != gUserSessions.end()) {
+    if (gUserNames.find(username) != gUserNames.end()) {
         res["error"] = "ALREADY_EXISTS";
         return {200, res};
     }
