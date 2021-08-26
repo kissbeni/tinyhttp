@@ -55,8 +55,6 @@ void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
 
     ml += 64;
 
-    printf("data size: %lu, ml: %lu\n", data.size(), ml);
-
     size_t numChunks = ml / 512;
 
     uint32_t words[80], a, b, c, d, e, f, k, temp;
