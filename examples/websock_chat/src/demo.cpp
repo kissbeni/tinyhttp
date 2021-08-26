@@ -159,7 +159,7 @@ int main(int argc, char const *argv[])
         return {200, templates::HomeTemplate(gUsers[sess->second].displayName)};
 
         bad_session:
-        HttpResponse response{403};
+        HttpResponse response{302};
         response["Location"] = "/";
         response["Set-Cookie"] = "tinyhttpChatSess=removed; Max-Age=-1; path=/; HttpOnly";
         return response;
@@ -171,7 +171,7 @@ int main(int argc, char const *argv[])
         if (!cookie.empty())
             destroySession(cookie);
 
-        HttpResponse response{403};
+        HttpResponse response{302};
         response["Location"] = "/";
         response["Set-Cookie"] = "tinyhttpChatSess=removed; Max-Age=-1; path=/; HttpOnly";
         return response;

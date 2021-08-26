@@ -64,6 +64,7 @@ body {
     padding-bottom: 2em;
     flex: 1 1 auto;
     overflow-y: auto;
+    overflow-x: hidden;
     min-height: 0px;
     scrollbar-color: transparent transparent;
     transition: scrollbar-color .2s ease-in-out;
@@ -94,10 +95,20 @@ body {
     margin: 0;
     box-shadow: 2px 2px 4px #aaa;
     text-align: initial;
+    transition: .2s margin ease-in-out;
+    margin-left: -25%;
 }
 
 .message.self {
     text-align: right;
+}
+
+.message.self>p {
+    margin-right: -25%;
+}
+
+.message>p.animate {
+    margin: 0;
 }
 
 .message.self>p {
