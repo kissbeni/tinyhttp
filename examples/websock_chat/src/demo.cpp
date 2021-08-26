@@ -94,7 +94,7 @@ static HttpResponse handleLogin(const HttpRequest& req) {
 
     size_t userId = key->second;
 
-    if (gUsers[userId].checkPassword(password)) {
+    if (!gUsers[userId].checkPassword(password)) {
         res["error"] = "BAD_PASSWORD";
         return {200, res};
     }
