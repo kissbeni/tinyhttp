@@ -19,4 +19,4 @@ done
 
 cd ..
 
-g++ -g -ggdb -std=c++17 ../../http.cpp ../../websock.cpp demo.cpp ../MiniJson/Source/libJson.a -Itemplates -I../../htcc -I../.. -I ../MiniJson/Source/include -pthread -o websock_chat_demo
+g++ -g -ggdb -fsanitize=address -Wall -std=c++17 ../../http.cpp ../../websock.cpp ./src/*.cpp ../MiniJson/Source/libJson.a -Itemplates -I../../htcc -I../.. -I ../MiniJson/Source/include -pthread -o websock_chat_demo
