@@ -1,4 +1,6 @@
 examples/*/*_demo
+examples/*/build
 examples/MiniJson
 htcc/htcc
 *.html.hpp
+*.o
