@@ -25,8 +25,19 @@ int main(int argc, char const *argv[])
     std::string className;
     className.reserve(len);
 
-    bool uppercaseFlag = true;
+    size_t start = 0;
+
     for (size_t i = 0; i < len; i++)
+        if (argv[1][i] == '/')
+            start = i + 1;
+
+    if (start >= len) {
+        puts("Invalid input file name");
+        exit(EXIT_FAILURE);
+    }
+
+    bool uppercaseFlag = true;
+    for (size_t i = start; i < len; i++)
     {
         char c = argv[1][i];
 
