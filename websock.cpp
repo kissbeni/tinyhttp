@@ -318,7 +318,7 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
                     theClient->onTextMessage(std::string(reinterpret_cast<char*>(contentBuffer.data()), contentBuffer.size()));
                     break;
                 case WSOPC_BINARY:
-                    theClient->onBinaryMessage(contentBuffer.data(), contentBuffer.size());
+                    theClient->onBinaryMessage(contentBuffer);
                     break;
                 case WSOPC_PING:
                     theClient->sendRaw(WSOPC_PONG, contentBuffer.data(), contentBuffer.size());

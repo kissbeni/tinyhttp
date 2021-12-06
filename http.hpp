@@ -217,7 +217,7 @@ struct WebsockClientHandler {
     virtual void onConnect() {}
     virtual void onDisconnect() {}
     virtual void onTextMessage(const std::string& message) {}
-    virtual void onBinaryMessage(const uint8_t* message, const size_t len) {}
+    virtual void onBinaryMessage(const std::vector<uint8_t>& data) {}
 
     void sendRaw(uint8_t opcode, const void* data, size_t length, bool mask = false);
     void sendDisconnect();
