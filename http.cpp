@@ -23,7 +23,7 @@
 
 void TCPClientStream::send(const void* what, size_t size) {
     if (::send(mSocket, what, size, MSG_NOSIGNAL) < 0)
-        perror("send failed");
+        throw std::runtime_error("TCP send failed");
 }
 
 size_t TCPClientStream::receive(void* target, size_t max) {

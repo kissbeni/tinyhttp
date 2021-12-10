@@ -85,6 +85,8 @@ struct IClientStream {
         typename Chk2 = typename std::enable_if<std::is_integral<decltype(T().size())>::value>::type
     >
     void send(const T& data) { send(data.data(), data.size()); }
+
+    bool mErrorFlag = false;
 };
 
 class TCPClientStream : public IClientStream {
@@ -98,7 +100,7 @@ class TCPClientStream : public IClientStream {
 
         static TCPClientStream acceptFrom(short listener);
 
-        bool isOpen() noexcept override { return mSocket >= 0; }
+        bool isOpen() noexcept override { return mSocket >= 0 && !mErrorFlag; }
         void send(const void* what, size_t size) override;
         size_t receive(void* target, size_t max) override;
         std::string receiveLine(bool asciiOnly = true, size_t max = -1) override;

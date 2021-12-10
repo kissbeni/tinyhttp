@@ -335,6 +335,8 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 }
 
 void WebsockClientHandler::sendRaw(uint8_t opcode, const void* data, size_t length, bool mask) {
+    if (!mClient) return;
+
     size_t bufferPosition = 0, headerPosition;
 
     size_t allocLen = 2 + std::min<size_t>(length, WS_FRAGMENT_THRESHOLD);
@@ -394,11 +396,19 @@ void WebsockClientHandler::sendRaw(uint8_t opcode, const void* data, size_t leng
             memcpy(packetBuffer + headerPosition, data_u8 + bufferPosition, lengthToSend);
         }
         
-        mClient->send(packetBuffer, lengthToSend + headerPosition);
+        try {
+            mClient->send(packetBuffer, lengthToSend + headerPosition);
+        } catch (std::runtime_error& e) {
+            std::cerr << "WebSocket send failed (" << e.what() << ")" << std::endl;
+            onDisconnect();
+            mClient->mErrorFlag = true;
+            goto cleanup;
+        }
 
         bufferPosition += lengthToSend;
     } while (bufferPosition < length);
 
+    cleanup:
     delete[] packetBuffer;
 }
 
