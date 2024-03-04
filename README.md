@@ -132,7 +132,7 @@ std::string getFrame() {
 
 // Handler for protocol handover
 struct MyStreamer : public ICanRequestProtocolHandover {
-    void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
+    void acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
         int res;
 
         // Accept while both the client and server sockets are valid
@@ -188,7 +188,7 @@ struct MyWebsockHandler : public WebsockClientHandler {
         puts("Text message!");
     }
 
-    void onBinaryMessage(const uint8_t* message, const size_t len) override {
+    void onBinaryMessage(const std::vector<uint8_t>& data) override {
         puts("Binary message!");
     }
 
