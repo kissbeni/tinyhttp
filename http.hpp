@@ -460,16 +460,16 @@ class HttpServer {
         return nullptr;
     }
 
-    class Processor;
     class Processor : public std::enable_shared_from_this<Processor> {
         std::shared_ptr<IClientStream> mClientStream;
         HttpServer& mOwner;
-        bool mIsAlive, mHasHandover;
-        std::thread mWorkThread;
-        std::mutex mShutdownMutex;
         std::chrono::system_clock::time_point mLastActive;
+        bool mIsAlive, mHasHandover;
+        std::unique_ptr<std::thread> mWorkThread;
+        std::mutex mShutdownMutex;
 
         static void clientThreadProc(std::shared_ptr<Processor> self);
+
 
         public:
             Processor(std::shared_ptr<IClientStream> stream, HttpServer& owner);
@@ -483,6 +483,7 @@ class HttpServer {
             }
             bool isTimedOut() const noexcept;
             void shutdown();
+            void startThread();
     };
 
     void cleanupThreadProc();
