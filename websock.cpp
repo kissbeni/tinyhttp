@@ -23,8 +23,8 @@ static inline constexpr uint32_t leftRotate(const uint32_t n, const uint32_t d) 
 
 
 void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
-    const uint8_t*  ptr     = reinterpret_cast<const uint8_t*>(dataptr);
-    std::vector<uint8_t> data(ptr, ptr+size);
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(dataptr);
+    std::vector<uint8_t> data{ptr, ptr + size};
 
     uint32_t h0 = 0x67452301,
              h1 = 0xEFCDAB89,
@@ -225,7 +225,7 @@ std::unique_ptr<HttpResponse> WebsockHandlerBuilder::process(const HttpRequest& 
     return HandlerBuilder::process(req);
 }
 
-void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
+void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
     uint8_t buffer[64], realOpc;
     std::vector<uint8_t> contentBuffer;
     bool fin, receivingFragment;

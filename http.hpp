@@ -26,7 +26,15 @@
 #  define WS_FRAGMENT_THRESHOLD (2*1024) // 2kiB
 #endif
 
+// Disabled if set to a <= 0 value
+// Timeout for regular clients keep-alive connections
+// (Ignored for socket takeovers like WebSockets)
+#ifndef TINYHTTP_CLIENT_TIMEOUT
+#  define TINYHTTP_CLIENT_TIMEOUT (30) // Seconds
+#endif
+
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <memory>
 #include <stdexcept>
@@ -38,6 +46,8 @@
 #include <map>
 #include <iostream>
 #include <fstream>
+#include <list>
+#include <mutex>
 
 #ifdef TINYHTTP_JSON
 #  include <json.h>
@@ -90,7 +100,7 @@ struct IClientStream {
 };
 
 class TCPClientStream : public IClientStream {
-    short mSocket;
+    int mSocket;
 
     public:
         ~TCPClientStream() { close(); }
@@ -211,7 +221,7 @@ class HttpRequest : public HttpMessageCommon {
 
 struct ICanRequestProtocolHandover {
     virtual ~ICanRequestProtocolHandover() = default;
-    virtual void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) = 0;
+    virtual void acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) = 0;
 };
 
 #ifdef TINYHTTP_WS
@@ -227,7 +237,7 @@ struct WebsockClientHandler {
     void sendBinary(const void* data, size_t length);
     
     template<size_t N>
-    void sendBinary(const uint8_t data[N]) {
+    inline void sendBinary(const uint8_t data[N]) {
         sendBinary(data, N);
     }
 
@@ -241,7 +251,7 @@ struct WebsockClientHandler {
 
     #ifdef TINYHTTP_JSON
 
-    void sendJson(const miniJson::Json& json) {
+    inline void sendJson(const miniJson::Json& json) {
         sendText(json.serialize());
     }
 
@@ -274,11 +284,11 @@ class HttpResponse : public HttpMessageCommon {
             setContent(content);
         }
 
-        void requestProtocolHandover(ICanRequestProtocolHandover* newOwner) {
+        inline void requestProtocolHandover(ICanRequestProtocolHandover* newOwner) noexcept {
             mHandover = newOwner;
         }
 
-        bool acceptProtocolHandover(ICanRequestProtocolHandover** outTarget) {
+        inline bool acceptProtocolHandover(ICanRequestProtocolHandover** outTarget) noexcept {
             if (outTarget && mHandover)
             {
                 *outTarget = mHandover;
@@ -349,7 +359,7 @@ class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolH
 
         virtual std::unique_ptr<HttpResponse> process(const HttpRequest& req) override;
 
-        void acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) override;
+        void acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) override;
 };
 
 class HttpHandlerBuilder : public HandlerBuilder {
@@ -403,10 +413,14 @@ class HttpHandlerBuilder : public HandlerBuilder {
         }
 
         template<typename T>
-        HttpHandlerBuilder* posted(T x) { return posted(HandlerFunc(x)); }
+        inline HttpHandlerBuilder* posted(T x) {
+            return posted(HandlerFunc(std::move(x)));
+        }
 
         template<typename T>
-        HttpHandlerBuilder* requested(T x) { return requested(HandlerFunc(x)); }
+        inline HttpHandlerBuilder* requested(T x) {
+            return requested(HandlerFunc(std::move(x)));
+        }
 
         std::unique_ptr<HttpResponse> process(const HttpRequest& req) override {
             auto h = mHandlers.find(req.getMethod());
@@ -422,10 +436,10 @@ class HttpServer {
     std::vector<std::pair<std::string, std::shared_ptr<HandlerBuilder>>> mHandlers;
     std::vector<std::pair<std::regex, std::shared_ptr<HandlerBuilder>>> mReHandlers;
     MessageBuilder mDefault404Message, mDefault400Message;
-    short mSocket = -1;
+    int mSocket = -1;
+    bool mCleanupThreadShutdown = false;
 
     std::shared_ptr<HttpResponse> processRequest(std::string key, const HttpRequest& req) {
-
         try {
             for (auto& x : mHandlers)
                 if (x.first == key) {
@@ -446,24 +460,62 @@ class HttpServer {
         return nullptr;
     }
 
+    class Processor;
+    class Processor : public std::enable_shared_from_this<Processor> {
+        std::shared_ptr<IClientStream> mClientStream;
+        HttpServer& mOwner;
+        bool mIsAlive, mHasHandover;
+        std::thread mWorkThread;
+        std::mutex mShutdownMutex;
+        std::chrono::system_clock::time_point mLastActive;
+
+        static void clientThreadProc(std::shared_ptr<Processor> self);
+
+        public:
+            Processor(std::shared_ptr<IClientStream> stream, HttpServer& owner);
+
+            ~Processor() {
+                shutdown();
+            }
+
+            inline bool isAlive() const noexcept {
+                return mIsAlive;
+            }
+            bool isTimedOut() const noexcept;
+            void shutdown();
+    };
+
+    void cleanupThreadProc();
+
+    std::mutex mRequestProcessorListMutex;
+    std::list<std::shared_ptr<Processor>> mRequestProcessors;
+    std::unique_ptr<std::thread> mCleanupThread;
+
     public:
         HttpServer();
+        ~HttpServer() {
+            mCleanupThreadShutdown = true;
+            shutdown();
+
+            if (mCleanupThread->joinable())
+                mCleanupThread->join();
+        }
 
         std::shared_ptr<WebsockHandlerBuilder> websocket(std::string path) {
             auto h = std::make_shared<WebsockHandlerBuilder>();
-            mHandlers.insert(mHandlers.begin(), std::pair<std::string, std::shared_ptr<WebsockHandlerBuilder>>(path, h));
+            mHandlers.insert(mHandlers.begin(), std::pair<std::string, std::shared_ptr<WebsockHandlerBuilder>>{std::move(path), h});
             return h;
         }
 
         std::shared_ptr<HttpHandlerBuilder> when(std::string path) {
             auto h = std::make_shared<HttpHandlerBuilder>();
-            mHandlers.push_back(std::pair<std::string, std::shared_ptr<HttpHandlerBuilder>>(path, h));
+            mHandlers.push_back(std::pair<std::string, std::shared_ptr<HttpHandlerBuilder>>{std::move(path), h});
             return h;
         }
 
         std::shared_ptr<HttpHandlerBuilder> whenMatching(std::string path) {
             auto h = std::make_shared<HttpHandlerBuilder>();
-            mReHandlers.push_back(std::pair<std::regex, std::shared_ptr<HttpHandlerBuilder>>(std::regex(path), h));
+            mReHandlers.push_back(std::pair<std::regex, std::shared_ptr<HttpHandlerBuilder>>{std::regex{std::move(path)}, h});
             return h;
         }
 
