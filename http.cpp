@@ -180,9 +180,8 @@ bool HttpRequest::parse(std::shared_ptr<IClientStream> stream) {
 }
 
 HttpServer::Processor::Processor(std::shared_ptr<IClientStream> stream, HttpServer& owner)
-    : mClientStream{std::move(stream)}, mOwner{owner}, mIsAlive{true}, mHasHandover{false}, mWorkThread{[this]() {
-        clientThreadProc(shared_from_this());
-    }} { }
+    : mClientStream{std::move(stream)}, mOwner{owner}, mLastActive{std::chrono::system_clock::now()},
+      mIsAlive{true}, mHasHandover{false} { }
 
 /* static */ void HttpServer::Processor::clientThreadProc(std::shared_ptr<Processor> self) {
     ICanRequestProtocolHandover* handover = nullptr;
@@ -263,8 +262,15 @@ void HttpServer::Processor::shutdown() {
     if (mClientStream && mClientStream->isOpen())
         mClientStream->close();
 
-    if (mWorkThread.joinable())
-        mWorkThread.detach();
+    if (mWorkThread && mWorkThread->joinable())
+        mWorkThread->detach();
+}
+
+void HttpServer::Processor::startThread() {
+    auto self_ptr = shared_from_this();
+    mWorkThread.reset(new std::thread{[self_ptr]() {
+        clientThreadProc(self_ptr);
+    }});
 }
 
 void HttpServer::cleanupThreadProc() {
@@ -335,10 +341,12 @@ void HttpServer::startListening(uint16_t port) {
 
     printf("Waiting for incoming connections...\n");
     while (mSocket != -1) {
-        auto processor = std::make_unique<Processor>(
+        auto processor = std::make_shared<Processor>(
             std::make_shared<TCPClientStream>(TCPClientStream::acceptFrom(mSocket)),
             *this
         );
+
+        processor->startThread();
 
         mRequestProcessorListMutex.lock();
         mRequestProcessors.push_back(std::move(processor));
