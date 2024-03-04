@@ -35,4 +35,8 @@ function _post() {
     msg.value = "";
 }
 
+function _shutdown() {
+    location.href = "/shutdown";
+}
+
 _refresh();

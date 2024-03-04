@@ -30,7 +30,7 @@ struct User {
 struct ChatSocketHandler : public WebsockClientHandler {
     void onConnect() override;
     void onTextMessage(const std::string& message) override;
-    void onBinaryMessage(const uint8_t* message, const size_t len) override;
+    void onBinaryMessage(const std::vector<uint8_t>& data) override;
     void onDisconnect() override;
 
     private:

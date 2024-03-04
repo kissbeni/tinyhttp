@@ -19,4 +19,4 @@ done
 
 cd ..
 
-g++ -g -ggdb -std=c++17 ../../http.cpp ../../websock.cpp demo.cpp ../MiniJson/Source/libJson.a -Itemplates -I../../htcc -I../.. -I ../MiniJson/Source/include -pthread -o tinyhttp_demo
+g++ -g -ggdb -std=c++17 ../../http.cpp demo.cpp ../MiniJson/Source/libJson.a -Itemplates -I../../htcc -I../.. -I ../MiniJson/Source/include -pthread -o tinyhttp_demo
