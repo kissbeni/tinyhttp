@@ -2,6 +2,7 @@
 #include "http.hpp"
 
 #include <vector>
+#include <iterator>
 
 /*static*/ TCPClientStream TCPClientStream::acceptFrom(short listener) {
     struct sockaddr_in client;
@@ -57,6 +58,7 @@ std::string TCPClientStream::receiveLine(bool asciiOnly, size_t max) {
 
 void TCPClientStream::close() {
     if (mSocket < 0) return;
+    ::shutdown(mSocket, SHUT_RDWR);
     ::close(mSocket);
     mSocket = -1;
 }
@@ -177,17 +179,139 @@ bool HttpRequest::parse(std::shared_ptr<IClientStream> stream) {
     return f->second;
 }
 
+HttpServer::Processor::Processor(std::shared_ptr<IClientStream> stream, HttpServer& owner)
+    : mClientStream{std::move(stream)}, mOwner{owner}, mIsAlive{true}, mHasHandover{false}, mWorkThread{[this]() {
+        clientThreadProc(shared_from_this());
+    }} { }
+
+/* static */ void HttpServer::Processor::clientThreadProc(std::shared_ptr<Processor> self) {
+    ICanRequestProtocolHandover* handover = nullptr;
+    std::unique_ptr<HttpRequest> handoverRequest;
+
+    try {
+        while (self->mClientStream->isOpen() && self->isAlive()) {
+            HttpRequest req;
+
+            try {
+                if (!req.parse(self->mClientStream)) {
+                    self->mClientStream->send(self->mOwner.mDefault400Message);
+                    self->mClientStream->close();
+                    continue;
+                }
+            } catch (...) {
+                self->mClientStream->send(self->mOwner.mDefault400Message);
+                self->mClientStream->close();
+                continue;
+            }
+
+            auto res = self->mOwner.processRequest(req.getPath(), req);
+            if (res) {
+                auto builtMessage = res->buildMessage();
+                self->mClientStream->send(builtMessage);
+
+                if (res->acceptProtocolHandover(&handover)) {
+                    handoverRequest = std::make_unique<HttpRequest>(req);
+                    break;
+                }
+
+                goto keep_alive_check;
+            }
+
+            self->mClientStream->send(self->mOwner.mDefault404Message);
+
+            keep_alive_check:
+            self->mLastActive = std::chrono::system_clock::now();
+
+            if (req["Connection"] != "keep-alive")
+                break;
+        }
+
+        if (handover) {
+            puts("Doing handover");
+            self->mHasHandover = true;
+            handover->acceptHandover(self->mOwner.mSocket, *self->mClientStream.get(), std::move(handoverRequest));
+            puts("Handover proc exited");
+        }
+    } catch (std::exception& e) {
+        // Don't print the exception when we are getting shut down, it's expected to be raised
+        if (self->isAlive()) {
+            std::cerr << "Exception in HTTP client handler (" << e.what() << ")\n";
+        }
+    }
+
+    self->mClientStream->close();
+    self->mIsAlive = false;
+}
+
+bool HttpServer::Processor::isTimedOut() const noexcept {
+    if constexpr (TINYHTTP_CLIENT_TIMEOUT <= 0) {
+        return false;
+    }
+
+    if (mHasHandover) {
+        return false;
+    }
+
+    auto duration = std::chrono::system_clock::now() - mLastActive;
+    return duration > std::chrono::seconds(TINYHTTP_CLIENT_TIMEOUT);
+}
+
+void HttpServer::Processor::shutdown() {
+    std::unique_lock{mShutdownMutex};
+    mIsAlive = false;
+    
+    if (mClientStream && mClientStream->isOpen())
+        mClientStream->close();
+
+    if (mWorkThread.joinable())
+        mWorkThread.detach();
+}
+
+void HttpServer::cleanupThreadProc() {
+    while (!mCleanupThreadShutdown) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        if (mSocket == -1)
+            continue;
+        
+        mRequestProcessorListMutex.lock();
+        for (auto it = mRequestProcessors.begin(); it != mRequestProcessors.end(); ++it) {
+            auto& processor = *it;
+
+            if (processor->isTimedOut()) {
+                processor->shutdown();
+            }
+
+            if (!processor->isAlive()) {
+                mRequestProcessors.erase(it);
+                it = mRequestProcessors.begin();
+            }
+        }
+        mRequestProcessorListMutex.unlock();
+    }
+}
+
 HttpServer::HttpServer() {
     mDefault404Message = HttpResponse{404, "text/plain", "404 not found"}.buildMessage();
     mDefault400Message = HttpResponse{400, "text/plain", "400 bad request"}.buildMessage();
+
+    mCleanupThread.reset(new std::thread{[this]() { this->cleanupThreadProc(); }});
 }
 
 void HttpServer::startListening(uint16_t port) {
-    #ifndef TINYHTTP_FUZZING
+    if (mSocket != -1)
+        throw std::runtime_error("Server is already running");
+
     mSocket = socket(AF_INET, SOCK_STREAM, 0);
 
     if (mSocket == -1)
         throw std::runtime_error("Could not create socket");
+
+    int opt = 1;
+    if (setsockopt(mSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        throw std::runtime_error("Could not set SO_REUSEADDR option");
+    }
 
     struct sockaddr_in remote = {0};
 
@@ -201,84 +325,44 @@ void HttpServer::startListening(uint16_t port) {
 
         if (iRetval < 0) {
             perror("Failed to bind socket, retrying in 5 seconds...");
-            usleep(1000 * 5000);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         } else break;
     }
 
-    listen(mSocket, 3);
-    #else
-    mSocket = 0;
-    #endif
+    iRetval = ::listen(mSocket, 3);
+    if (iRetval < 0)
+        throw std::runtime_error("listen() failed");
 
     printf("Waiting for incoming connections...\n");
     while (mSocket != -1) {
-        #ifdef TINYHTTP_FUZZING
-        auto stream = std::make_shared<StdinClientStream>();
-        #else
-        auto stream = std::shared_ptr<IClientStream>(new TCPClientStream{TCPClientStream::acceptFrom(mSocket)});
-        #endif
+        auto processor = std::make_unique<Processor>(
+            std::make_shared<TCPClientStream>(TCPClientStream::acceptFrom(mSocket)),
+            *this
+        );
 
-        std::thread th([stream,this]() {
-            ICanRequestProtocolHandover* handover = nullptr;
-
-            std::unique_ptr<HttpRequest> handoverRequest;
-
-            try {
-                while (stream->isOpen()) {
-                    HttpRequest req;
-
-                    try {
-                        if (!req.parse(stream)) {
-                            stream->send(mDefault400Message);
-                            stream->close();
-                            continue;
-                        }
-                    } catch (...) {
-                        stream->send(mDefault400Message);
-                        stream->close();
-                        continue;
-                    }
-
-                    auto res = processRequest(req.getPath(), req);
-                    if (res) {
-                        auto builtMessage = res->buildMessage();
-                        stream->send(builtMessage);
-
-                        if (res->acceptProtocolHandover(&handover)) {
-                            handoverRequest = std::make_unique<HttpRequest>(req);
-                            break;
-                        }
-
-                        goto keep_alive_check;
-                    }
-
-                    stream->send(mDefault404Message);
-
-                    keep_alive_check:
-                    if (req["Connection"] != "keep-alive")
-                        break;
-                }
-
-                if (handover) handover->acceptHandover(mSocket, *stream.get(), std::move(handoverRequest));
-            } catch (std::exception& e) {
-                std::cerr << "Exception in HTTP client handler (" << e.what() << ")\n";
-            }
-
-            stream->close();
-        });
-
-        #ifdef TINYHTTP_FUZZING
-        th.join();
-        break;
-        #else
-        th.detach();
-        #endif
+        mRequestProcessorListMutex.lock();
+        mRequestProcessors.push_back(std::move(processor));
+        mRequestProcessorListMutex.unlock();
     }
 
     puts("Listen loop shut down");
 }
 
 void HttpServer::shutdown() {
-    close(mSocket);
+    int sock = mSocket;
+
+    if (mSocket < 0) {
+        return;
+    }
+    
     mSocket = -1;
+
+    puts("Shutting down server");
+    ::shutdown(sock, SHUT_RDWR);
+
+    puts("Shutting down request handlers");
+    mRequestProcessorListMutex.lock();
+    mRequestProcessors.clear();
+    mRequestProcessorListMutex.unlock();
+    close(sock);
 }
