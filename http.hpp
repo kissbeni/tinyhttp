@@ -10,6 +10,13 @@
 // template integration
 #define TINYHTTP_TEMPLATES
 
+// threading support
+#define TINYHTTP_THREADING
+
+// allow keep-alive connections
+// (you should disable this if you are using a single thread)
+#define TINYHTTP_ALLOW_KEEPALIVE
+
 #ifndef MAX_HTTP_HEADERS
 #  define MAX_HTTP_HEADERS 30
 #endif
@@ -41,13 +48,17 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <thread>
 #include <regex>
 #include <map>
 #include <iostream>
 #include <fstream>
 #include <list>
-#include <mutex>
+#include <chrono>
+
+#ifdef TINYHTTP_THREADING
+#  include <thread>
+#  include <mutex>
+#endif
 
 #ifdef TINYHTTP_JSON
 #  include <json.h>
@@ -465,13 +476,15 @@ class HttpServer {
         HttpServer& mOwner;
         std::chrono::system_clock::time_point mLastActive;
         bool mIsAlive, mHasHandover;
+
+        #ifdef TINYHTTP_THREADING
         std::unique_ptr<std::thread> mWorkThread;
         std::mutex mShutdownMutex;
-
-        static void clientThreadProc(std::shared_ptr<Processor> self);
-
+        #endif
 
         public:
+            static void clientThreadProc(std::shared_ptr<Processor> self);
+
             Processor(std::shared_ptr<IClientStream> stream, HttpServer& owner);
 
             ~Processor() {
@@ -483,14 +496,21 @@ class HttpServer {
             }
             bool isTimedOut() const noexcept;
             void shutdown();
+
+            #ifdef TINYHTTP_THREADING
             void startThread();
+            #endif
     };
 
+    #ifdef TINYHTTP_THREADING
     void cleanupThreadProc();
 
-    std::mutex mRequestProcessorListMutex;
-    std::list<std::shared_ptr<Processor>> mRequestProcessors;
     std::unique_ptr<std::thread> mCleanupThread;
+    std::list<std::shared_ptr<Processor>> mRequestProcessors;
+    std::mutex mRequestProcessorListMutex;
+    #else
+    std::shared_ptr<Processor> mCurrentProcessor;
+    #endif
 
     public:
         HttpServer();
@@ -498,8 +518,10 @@ class HttpServer {
             mCleanupThreadShutdown = true;
             shutdown();
 
+            #ifdef TINYHTTP_THREADING
             if (mCleanupThread->joinable())
                 mCleanupThread->join();
+            #endif
         }
 
         std::shared_ptr<WebsockHandlerBuilder> websocket(std::string path) {
