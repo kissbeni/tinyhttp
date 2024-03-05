@@ -241,6 +241,7 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
             contentBuffer.clear();
 
             size_t totalLength = 0;
+            realOpc = 0xff;
 
             do {
                 if (client.receive(buffer, 2) == 0)

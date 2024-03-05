@@ -205,6 +205,10 @@ HttpServer::Processor::Processor(std::shared_ptr<IClientStream> stream, HttpServ
 
             auto res = self->mOwner.processRequest(req.getPath(), req);
             if (res) {
+                #ifndef TINYHTTP_ALLOW_KEEPALIVE
+                (*res)["Connection"] = "close";
+                #endif
+
                 auto builtMessage = res->buildMessage();
                 self->mClientStream->send(builtMessage);
 
@@ -220,9 +224,13 @@ HttpServer::Processor::Processor(std::shared_ptr<IClientStream> stream, HttpServ
 
             keep_alive_check:
             self->mLastActive = std::chrono::system_clock::now();
-
+            
+            #ifdef TINYHTTP_ALLOW_KEEPALIVE
             if (req["Connection"] != "keep-alive")
                 break;
+            #else
+            break;
+            #endif
         }
 
         if (handover) {
@@ -256,16 +264,22 @@ bool HttpServer::Processor::isTimedOut() const noexcept {
 }
 
 void HttpServer::Processor::shutdown() {
+    #ifdef TINYHTTP_THREADING
     std::unique_lock{mShutdownMutex};
+    #endif
+
     mIsAlive = false;
     
     if (mClientStream && mClientStream->isOpen())
         mClientStream->close();
 
+    #ifdef TINYHTTP_THREADING
     if (mWorkThread && mWorkThread->joinable())
         mWorkThread->detach();
+    #endif
 }
 
+#ifdef TINYHTTP_THREADING
 void HttpServer::Processor::startThread() {
     auto self_ptr = shared_from_this();
     mWorkThread.reset(new std::thread{[self_ptr]() {
@@ -296,12 +310,15 @@ void HttpServer::cleanupThreadProc() {
         mRequestProcessorListMutex.unlock();
     }
 }
+#endif
 
 HttpServer::HttpServer() {
     mDefault404Message = HttpResponse{404, "text/plain", "404 not found"}.buildMessage();
     mDefault400Message = HttpResponse{400, "text/plain", "400 bad request"}.buildMessage();
 
+    #ifdef TINYHTTP_THREADING
     mCleanupThread.reset(new std::thread{[this]() { this->cleanupThreadProc(); }});
+    #endif
 }
 
 void HttpServer::startListening(uint16_t port) {
@@ -331,7 +348,11 @@ void HttpServer::startListening(uint16_t port) {
 
         if (iRetval < 0) {
             perror("Failed to bind socket, retrying in 5 seconds...");
+            #ifdef TINYHTTP_THREADING
             std::this_thread::sleep_for(std::chrono::seconds(5));
+            #else
+            usleep(5000 * 1000);
+            #endif
         } else break;
     }
 
@@ -346,14 +367,19 @@ void HttpServer::startListening(uint16_t port) {
             *this
         );
 
+        #ifdef TINYHTTP_THREADING
         processor->startThread();
 
         mRequestProcessorListMutex.lock();
         mRequestProcessors.push_back(std::move(processor));
         mRequestProcessorListMutex.unlock();
+        #else
+        mCurrentProcessor = processor;
+        Processor::clientThreadProc(processor);
+        #endif
     }
 
-    puts("Listen loop shut down");
+    puts("Listen loop exited");
 }
 
 void HttpServer::shutdown() {
@@ -368,9 +394,15 @@ void HttpServer::shutdown() {
     puts("Shutting down server");
     ::shutdown(sock, SHUT_RDWR);
 
-    puts("Shutting down request handlers");
+    #ifdef TINYHTTP_THREADING
     mRequestProcessorListMutex.lock();
     mRequestProcessors.clear();
     mRequestProcessorListMutex.unlock();
+    #else
+    if (mCurrentProcessor) {
+        mCurrentProcessor->shutdown();
+    }
+    #endif
+
     close(sock);
 }
