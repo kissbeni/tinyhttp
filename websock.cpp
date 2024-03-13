@@ -244,8 +244,10 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
             realOpc = 0xff;
 
             do {
-                if (client.receive(buffer, 2) == 0)
-                    break;
+                if (client.receive(buffer, 2) == 0) {
+                    // TODO: this might break non-blocking sockets in the future
+                    goto websock_loop_exit;
+                }
 
                 uint8_t first  = buffer[0];
                 uint8_t second = buffer[1];
@@ -255,7 +257,7 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
 
                 if (first & 0x70) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
                 uint8_t opc = first & 0x0F;
@@ -265,11 +267,12 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
 
                 if (receivingFragment && opc != WSOPC_CONTINUATION) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
-                if (opc == WSOPC_DISCONNECT)
-                    break;
+                if (opc == WSOPC_DISCONNECT) {
+                    goto websock_loop_exit;
+                }
 
                 size_t payloadLength = second & 0x7F;
                 if (payloadLength == 126) {
@@ -295,7 +298,7 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
 
                 if (totalLength + payloadLength > MAX_ALLOWED_WS_FRAME_LENGTH) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
                 contentBuffer.resize(totalLength + payloadLength);
@@ -325,13 +328,15 @@ void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& clien
                     theClient->sendRaw(WSOPC_PONG, contentBuffer.data(), contentBuffer.size());
                     break;
                 default:
-                    break;
+                    theClient->sendDisconnect();
+                    goto websock_loop_exit;
             }
         }
     } catch (std::exception& e) {
         std::cerr << "WebSocket closed due to an exception (" << e.what() << ")\n";
     }
 
+    websock_loop_exit:
     theClient->onDisconnect();
 }
 
