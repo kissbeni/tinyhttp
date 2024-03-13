@@ -1,6 +1,7 @@
 
 #include "websock_chat.h"
 
+#include <signal.h>
 #include <http.hpp>
 #include <home.html.hpp>
 
@@ -108,6 +109,12 @@ static HttpResponse handleLogin(const HttpRequest& req) {
     return response;
 }
 
+HttpServer s;
+
+void handle_sigint(int sig) {
+    s.shutdown();
+}
+
 int main(int argc, char const *argv[])
 {
     srand(time(NULL));
@@ -116,7 +123,7 @@ int main(int argc, char const *argv[])
     addUser("test1", "password", "Test1");
     addUser("test2", "password", "Test2");
 
-    HttpServer s;
+    signal(SIGINT, handle_sigint);
 
     s.when("/")->serveFile("index.html");
     s.whenMatching("/static/[^/]+")->serveFromFolder("static");

@@ -4,25 +4,6 @@
 
 static std::vector<std::string> messages;
 
-struct MyWebsockHandler : public WebsockClientHandler {
-    void onConnect() override {
-        puts("Connect!");
-    }
-
-    void onTextMessage(const std::string& message) override {
-        puts("Text message!");
-        std::cout << "  -> " << message << std::endl;
-    }
-
-    void onBinaryMessage(const uint8_t* message, const size_t len) override {
-        puts("Binary message!");
-    }
-
-    void onDisconnect() override {
-        puts("Disconnect!");
-    }
-};
-
 int main(int argc, char const *argv[])
 {
     HttpServer s;
@@ -49,7 +30,11 @@ int main(int argc, char const *argv[])
             return {200, templates::ViewTemplate(messages)};
         });
 
-    s.websocket("/ws")->handleWith<MyWebsockHandler>();
+    s.when("/shutdown")
+        ->requested([&s](const HttpRequest&) -> HttpResponse {
+            s.shutdown();
+            return {200, "Goodbye!"};
+        });
 
     s.startListening(8088);
     return 0;

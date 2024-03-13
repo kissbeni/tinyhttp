@@ -81,7 +81,7 @@ void ChatSocketHandler::onTextMessage(const std::string& message) {
             client->sendJson(toSend);
 }
 
-void ChatSocketHandler::onBinaryMessage(const uint8_t* message, const size_t len) {
+void ChatSocketHandler::onBinaryMessage(const std::vector<uint8_t>& data) {
     puts("Binary message!");
 }
 

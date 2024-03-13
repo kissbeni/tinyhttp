@@ -23,8 +23,8 @@ static inline constexpr uint32_t leftRotate(const uint32_t n, const uint32_t d) 
 
 
 void hash_sha1(const void* dataptr, const size_t size, uint8_t* outBuffer) {
-    const uint8_t*  ptr     = reinterpret_cast<const uint8_t*>(dataptr);
-    std::vector<uint8_t> data(ptr, ptr+size);
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(dataptr);
+    std::vector<uint8_t> data{ptr, ptr + size};
 
     uint32_t h0 = 0x67452301,
              h1 = 0xEFCDAB89,
@@ -225,7 +225,7 @@ std::unique_ptr<HttpResponse> WebsockHandlerBuilder::process(const HttpRequest& 
     return HandlerBuilder::process(req);
 }
 
-void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
+void WebsockHandlerBuilder::acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) {
     uint8_t buffer[64], realOpc;
     std::vector<uint8_t> contentBuffer;
     bool fin, receivingFragment;
@@ -241,10 +241,13 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
             contentBuffer.clear();
 
             size_t totalLength = 0;
+            realOpc = 0xff;
 
             do {
-                if (client.receive(buffer, 2) == 0)
-                    break;
+                if (client.receive(buffer, 2) == 0) {
+                    // TODO: this might break non-blocking sockets in the future
+                    goto websock_loop_exit;
+                }
 
                 uint8_t first  = buffer[0];
                 uint8_t second = buffer[1];
@@ -254,7 +257,7 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 
                 if (first & 0x70) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
                 uint8_t opc = first & 0x0F;
@@ -264,11 +267,12 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 
                 if (receivingFragment && opc != WSOPC_CONTINUATION) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
-                if (opc == WSOPC_DISCONNECT)
-                    break;
+                if (opc == WSOPC_DISCONNECT) {
+                    goto websock_loop_exit;
+                }
 
                 size_t payloadLength = second & 0x7F;
                 if (payloadLength == 126) {
@@ -294,7 +298,7 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
 
                 if (totalLength + payloadLength > MAX_ALLOWED_WS_FRAME_LENGTH) {
                     theClient->sendDisconnect();
-                    break;
+                    goto websock_loop_exit;
                 }
 
                 contentBuffer.resize(totalLength + payloadLength);
@@ -324,13 +328,15 @@ void WebsockHandlerBuilder::acceptHandover(short& serverSock, IClientStream& cli
                     theClient->sendRaw(WSOPC_PONG, contentBuffer.data(), contentBuffer.size());
                     break;
                 default:
-                    break;
+                    theClient->sendDisconnect();
+                    goto websock_loop_exit;
             }
         }
     } catch (std::exception& e) {
         std::cerr << "WebSocket closed due to an exception (" << e.what() << ")\n";
     }
 
+    websock_loop_exit:
     theClient->onDisconnect();
 }
 
