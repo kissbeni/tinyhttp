@@ -129,7 +129,7 @@ class TCPClientStream : public IClientStream {
 };
 
 struct StdinClientStream : IClientStream {
-    bool isOpen() noexcept override { return true; };
+    bool isOpen() noexcept override { return true; }
     void send(const void* what, size_t size) override {
         fwrite(what, 1, size, stdout);
         fflush(stdout);

@@ -80,8 +80,8 @@ bool HttpRequest::parse(std::shared_ptr<IClientStream> stream) {
 
     path = results[1];
 
-    ssize_t question = path.find("?");
-    if (question > 0) {
+    size_t question = path.find("?");
+    if (question != std::string::npos) {
         query = path.substr(question);
         path = path.substr(0, question);
     }
@@ -96,8 +96,8 @@ bool HttpRequest::parse(std::shared_ptr<IClientStream> stream) {
 
         if (line.empty()) break;
 
-        ssize_t sep = line.find(": ");
-        if (sep <= 0)
+        size_t sep = line.find(": ");
+        if (sep == std::string::npos || sep == 0)
             return false;
 
         std::string key = line.substr(0, sep), val = line.substr(sep+2);
@@ -168,8 +168,8 @@ bool HttpRequest::parse(std::shared_ptr<IClientStream> stream) {
         mMimeDatabase.insert({"json", "application/json"});
     }
 
-    ssize_t pos = name.rfind(".");
-    if (pos < 0)
+    size_t pos = name.rfind(".");
+    if (pos == std::string::npos)
         return "application/octet-stream";
 
     auto f = mMimeDatabase.find(name.substr(pos+1));
