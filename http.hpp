@@ -246,7 +246,7 @@ struct WebsockClientHandler {
     void sendDisconnect();
     void sendText(const std::string& str);
     void sendBinary(const void* data, size_t length);
-    
+
     template<size_t N>
     inline void sendBinary(const uint8_t data[N]) {
         sendBinary(data, N);
@@ -344,6 +344,7 @@ struct HandlerBuilder {
     }
 };
 
+#ifdef TINYHTTP_WS
 class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolHandover {
     struct Factory {
 		virtual ~Factory() = default;
@@ -372,6 +373,7 @@ class WebsockHandlerBuilder : public HandlerBuilder, public ICanRequestProtocolH
 
         void acceptHandover(int& serverSock, IClientStream& client, std::unique_ptr<HttpRequest> srcRequest) override;
 };
+#endif
 
 class HttpHandlerBuilder : public HandlerBuilder {
     typedef std::function<HttpResponse(const HttpRequest&)> HandlerFunc;
@@ -524,11 +526,13 @@ class HttpServer {
             #endif
         }
 
+        #ifdef TINYHTTP_WS
         std::shared_ptr<WebsockHandlerBuilder> websocket(std::string path) {
             auto h = std::make_shared<WebsockHandlerBuilder>();
             mHandlers.insert(mHandlers.begin(), std::pair<std::string, std::shared_ptr<WebsockHandlerBuilder>>{std::move(path), h});
             return h;
         }
+        #endif
 
         std::shared_ptr<HttpHandlerBuilder> when(std::string path) {
             auto h = std::make_shared<HttpHandlerBuilder>();
